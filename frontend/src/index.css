@@ -1,0 +1,134 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply min-h-screen transition-colors duration-200;
+  }
+}
+
+/* Print Specific Rules for Clean PDF Export */
+@media print {
+  /* Hide non-printable UI elements */
+  nav, footer, .no-print, button, .input-section {
+    display: none !important;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #111827 !important;
+    font-size: 11pt;
+    line-height: 1.5;
+    padding: 0;
+    margin: 0;
+  }
+
+  .print-only-header {
+    display: block !important;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #16a34a;
+    padding-bottom: 10px;
+  }
+
+  .markdown-body {
+    color: #111827 !important;
+  }
+
+  .markdown-body h1 {
+    color: #15803d !important;
+    font-size: 18pt !important;
+    page-break-after: avoid;
+  }
+
+  .markdown-body h2 {
+    color: #1f2937 !important;
+    font-size: 14pt !important;
+    border-bottom: 1px solid #e5e7eb !important;
+    page-break-after: avoid;
+    margin-top: 18pt !important;
+  }
+
+  .markdown-body h3 {
+    color: #16a34a !important;
+    font-size: 12pt !important;
+    page-break-after: avoid;
+  }
+
+  .markdown-body p, .markdown-body li {
+    color: #374151 !important;
+  }
+
+  .markdown-body hr {
+    border-color: #e5e7eb !important;
+  }
+
+  .markdown-body strong {
+    color: #111827 !important;
+  }
+
+  .page-break-avoid {
+    break-inside: avoid;
+  }
+}
+
+/* Light / Dark Mode Markdown body */
+.markdown-body h1 {
+  @apply text-2xl md:text-3xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-6 mb-4 border-b border-slate-200 dark:border-slate-800 pb-2;
+}
+
+.markdown-body h2 {
+  @apply text-xl md:text-2xl font-bold text-slate-900 dark:text-slate-100 mt-6 mb-3 flex items-center gap-2;
+}
+
+.markdown-body h3 {
+  @apply text-lg md:text-xl font-semibold text-emerald-700 dark:text-emerald-400 mt-5 mb-2;
+}
+
+.markdown-body p {
+  @apply text-slate-700 dark:text-slate-300 leading-relaxed mb-4 text-sm md:text-base;
+}
+
+.markdown-body ul {
+  @apply list-disc list-inside space-y-1.5 mb-4 text-slate-700 dark:text-slate-300 pl-2 text-sm md:text-base;
+}
+
+.markdown-body ol {
+  @apply list-decimal list-inside space-y-1.5 mb-4 text-slate-700 dark:text-slate-300 pl-2 text-sm md:text-base;
+}
+
+.markdown-body strong {
+  @apply text-slate-900 dark:text-white font-semibold;
+}
+
+.markdown-body hr {
+  @apply border-slate-200 dark:border-slate-800 my-6;
+}
+
+.markdown-body blockquote {
+  @apply border-l-4 border-emerald-500 bg-emerald-50 dark:bg-slate-800/40 px-4 py-2 my-4 rounded-r text-slate-700 dark:text-slate-300 italic;
+}
+
+.markdown-body code {
+  @apply font-mono text-xs md:text-sm bg-slate-100 dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700;
+}
+
+.markdown-body pre {
+  @apply bg-slate-900 text-slate-100 p-4 rounded-xl overflow-x-auto my-4;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.7);
+}

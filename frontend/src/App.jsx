@@ -62,7 +62,7 @@ export default function App() {
               </div>
               <div className="flex items-center gap-1">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <span>Google Gemini 3.7 Flash Engine</span>
+                <span>Instant Q&amp;A Exam Engine</span>
               </div>
               <div className="flex items-center gap-1">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />

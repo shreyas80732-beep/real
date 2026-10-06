@@ -1,8 +1,16 @@
 import express from 'express';
+import multer from 'multer';
+import pdfParse from 'pdf-parse';
 import { GoogleGenAI } from '@google/genai';
 import { Order, Note } from '../models.js';
 
 const router = express.Router();
+
+// Memory storage for file uploads (PDF, TXT, MD) up to 30MB
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 30 * 1024 * 1024 },
+});
 
 const getGeminiClient = () => {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -12,7 +20,50 @@ const getGeminiClient = () => {
   return new GoogleGenAI({ apiKey });
 };
 
-// 1. POST /api/notes/generate-stream (Passwordless - Authenticated via ₹9 Order/Token)
+// 1. POST /api/notes/parse-pdf (Extract text from PDF, TXT, or Markdown files)
+router.post('/parse-pdf', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No document file was uploaded.' });
+    }
+
+    const { originalname, mimetype, buffer } = req.file;
+    const isPdf = mimetype === 'application/pdf' || originalname.toLowerCase().endsWith('.pdf');
+
+    let extractedText = '';
+    let numPages = 1;
+
+    if (isPdf) {
+      const pdfData = await pdfParse(buffer);
+      extractedText = pdfData.text || '';
+      numPages = pdfData.numpages || 1;
+    } else {
+      // Plain text or Markdown
+      extractedText = buffer.toString('utf8');
+    }
+
+    if (!extractedText.trim()) {
+      return res.status(422).json({
+        message: 'Could not extract readable text from this document. If scanned/image-based, please paste the text directly.',
+      });
+    }
+
+    res.json({
+      success: true,
+      filename: originalname,
+      pages: numPages,
+      text: extractedText.trim(),
+    });
+  } catch (error) {
+    console.error('File parsing error:', error);
+    res.status(500).json({
+      message: 'Failed to read PDF document.',
+      error: error.message,
+    });
+  }
+});
+
+// 2. POST /api/notes/generate-stream (Chunk-by-chunk SSE streaming)
 router.post('/generate-stream', async (req, res) => {
   const { title, uploadedText, orderId, generationToken } = req.body;
 
@@ -41,11 +92,16 @@ router.post('/generate-stream', async (req, res) => {
     }
   }
 
-  // Set SSE Headers
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
+  // Set real-time SSE Streaming Headers to prevent any buffer delays
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
+
+  // Send immediate comment to establish connection
+  res.write(': stream-ready\n\n');
+  if (typeof res.flush === 'function') res.flush();
 
   let completeOutput = '';
 
@@ -127,14 +183,14 @@ ${uploadedText.trim()}
     res.write('data: [DONE]\n\n');
     res.end();
   } catch (error) {
-    console.error('Gemini generation stream error:', error);
+    console.error('Generation stream error:', error);
     res.write(`data: ${JSON.stringify({ error: error.message || 'Error occurred while generating study notes.' })}\n\n`);
     res.write('data: [DONE]\n\n');
     res.end();
   }
 });
 
-// 2. GET /api/notes/order/:orderId (Retrieve previously generated note by order ID)
+// 3. GET /api/notes/order/:orderId (Retrieve previously generated note by order ID)
 router.get('/order/:orderId', async (req, res) => {
   try {
     const note = await Note.findOne({ orderId: req.params.orderId });

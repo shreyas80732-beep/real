@@ -115,7 +115,7 @@ export default function SubscriptionModal({
             </div>
             <div className="flex items-center gap-2">
               <Check className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-              <span>Real-time Google Gemini 2.5 Flash streaming</span>
+              <span>Real-time High-Speed AI Streaming</span>
             </div>
             <div className="flex items-center gap-2">
               <Check className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />

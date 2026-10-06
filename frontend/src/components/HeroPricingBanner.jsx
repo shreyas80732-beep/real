@@ -11,7 +11,7 @@ export default function HeroPricingBanner({ user, onOpenSubscription, onScrollTo
         {/* Micro-badge */}
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold mb-6">
           <Zap className="w-3.5 h-3.5 fill-current" />
-          <span>Powered by Google Gemini 2.5 Flash</span>
+          <span>Exam Revision AI Assistant</span>
         </div>
 
         {/* Headline */}

@@ -1,7 +1,26 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 /**
- * 1. Create a ₹9 payment order for a single PDF / study guide
+ * 1. Extract text from uploaded PDF, TXT, or Markdown documents
+ */
+export const parseDocumentFile = async (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${API_BASE_URL}/api/notes/parse-pdf`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || 'Failed to extract text from file.');
+  }
+  return data;
+};
+
+/**
+ * 2. Create a ₹9 payment order for a single PDF / study guide
  */
 export const createPaymentOrder = async ({ name, email, title }) => {
   const response = await fetch(`${API_BASE_URL}/api/payment/create-order`, {
@@ -18,7 +37,7 @@ export const createPaymentOrder = async ({ name, email, title }) => {
 };
 
 /**
- * 2. Verify Razorpay Payment Signature
+ * 3. Verify Razorpay Payment Signature
  */
 export const verifyPayment = async (paymentDetails) => {
   const response = await fetch(`${API_BASE_URL}/api/payment/verify`, {
@@ -35,7 +54,7 @@ export const verifyPayment = async (paymentDetails) => {
 };
 
 /**
- * 3. Stream study guide generation with SSE (ReadableStream)
+ * 4. Stream study guide generation with SSE (ReadableStream)
  */
 export const streamNoteGeneration = async ({
   title,
@@ -50,7 +69,10 @@ export const streamNoteGeneration = async ({
   try {
     const response = await fetch(`${API_BASE_URL}/api/notes/generate-stream`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+      },
       body: JSON.stringify({ title, uploadedText, orderId, generationToken }),
       signal,
     });
@@ -72,29 +94,32 @@ export const streamNoteGeneration = async ({
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n\n');
-      buffer = lines.pop() || '';
+      const parts = buffer.split(/\r?\n\r?\n/);
+      buffer = parts.pop() || '';
 
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed.startsWith('data: ')) {
-          const dataStr = trimmed.replace('data: ', '').trim();
-          if (dataStr === '[DONE]') {
-            if (onDone) onDone();
-            return;
-          }
-
-          try {
-            const parsed = JSON.parse(dataStr);
-            if (parsed.error) {
-              if (onError) onError(new Error(parsed.error));
+      for (const part of parts) {
+        const lines = part.split(/\r?\n/);
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith('data: ')) {
+            const dataStr = trimmed.replace('data: ', '').trim();
+            if (dataStr === '[DONE]') {
+              if (onDone) onDone();
               return;
             }
-            if (parsed.text && onChunk) {
-              onChunk(parsed.text);
+
+            try {
+              const parsed = JSON.parse(dataStr);
+              if (parsed.error) {
+                if (onError) onError(new Error(parsed.error));
+                return;
+              }
+              if (parsed.text && onChunk) {
+                onChunk(parsed.text);
+              }
+            } catch (e) {
+              console.error('Failed to parse SSE payload:', e, dataStr);
             }
-          } catch (e) {
-            console.error('Failed to parse SSE line:', e, dataStr);
           }
         }
       }

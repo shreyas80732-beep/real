@@ -15,7 +15,7 @@ export default function ComplianceModal({ type, isOpen, onClose }) {
           </p>
           <h4 className="text-slate-900 dark:text-white font-semibold">1. Service Description</h4>
           <p>
-            NoteCraft AI provides AI-assisted note restructuring, revision summaries, and structured 2, 3, and 6-mark Q&amp;A generation powered by Google Gemini LLM models. The service is provided on an educational basis.
+            NoteCraft AI provides AI-assisted note restructuring, revision summaries, and structured 2, 3, and 6-mark Q&amp;A generation powered by advanced AI LLM models. The service is provided on an educational basis.
           </p>
           <h4 className="text-slate-900 dark:text-white font-semibold">2. Pay-Per-PDF Pricing (₹9)</h4>
           <p>
@@ -46,7 +46,7 @@ export default function ComplianceModal({ type, isOpen, onClose }) {
           </p>
           <h4 className="text-slate-900 dark:text-white font-semibold">3. AI Data Processing</h4>
           <p>
-            Study notes are transmitted strictly to Google Gemini API endpoints to produce the study guide. We never sell your study materials to advertisers.
+            Study notes are transmitted strictly to secure encrypted AI endpoints to produce the study guide. We never sell your study materials to advertisers.
           </p>
         </div>
       ),

@@ -12,11 +12,15 @@ import {
   FileText,
   Loader2,
   ShieldCheck,
-  CheckCircle2,
   ArrowRight,
-  RefreshCw,
+  FileUp,
 } from 'lucide-react';
-import { createPaymentOrder, verifyPayment, streamNoteGeneration } from '../services/api';
+import {
+  createPaymentOrder,
+  verifyPayment,
+  streamNoteGeneration,
+  parseDocumentFile,
+} from '../services/api';
 import { launchRazorpayPayment } from '../services/razorpay';
 
 export default function GeneratorWorkspace() {
@@ -26,12 +30,18 @@ export default function GeneratorWorkspace() {
   const [customerEmail, setCustomerEmail] = useState('');
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isParsingFile, setIsParsingFile] = useState(false);
+  const [parseStatus, setParseStatus] = useState('');
   const [generatedOutput, setGeneratedOutput] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [copied, setCopied] = useState(false);
 
   const fileInputRef = useRef(null);
   const outputRef = useRef(null);
+
+  // Buffer queue for smooth chunk-by-chunk typewriter streaming
+  const streamQueueRef = useRef('');
+  const streamTimerRef = useRef(null);
 
   // Auto-scroll output while streaming
   useEffect(() => {
@@ -40,7 +50,50 @@ export default function GeneratorWorkspace() {
     }
   }, [generatedOutput, isStreaming]);
 
-  // Load sample notes for fast testing
+  // Clean up interval on unmount
+  useEffect(() => {
+    return () => {
+      if (streamTimerRef.current) clearInterval(streamTimerRef.current);
+    };
+  }, []);
+
+  // Smooth chunk-by-chunk streamer engine
+  const startChunkStreamer = () => {
+    streamQueueRef.current = '';
+    setGeneratedOutput('');
+
+    if (streamTimerRef.current) clearInterval(streamTimerRef.current);
+
+    streamTimerRef.current = setInterval(() => {
+      if (streamQueueRef.current.length > 0) {
+        // Stream 2-8 characters dynamically per tick for high fluid responsiveness
+        const step = Math.max(2, Math.min(10, Math.ceil(streamQueueRef.current.length / 6)));
+        const slice = streamQueueRef.current.slice(0, step);
+        streamQueueRef.current = streamQueueRef.current.slice(step);
+        setGeneratedOutput((prev) => prev + slice);
+      }
+    }, 18); // ~55fps smooth flow
+  };
+
+  const pushChunk = (chunk) => {
+    streamQueueRef.current += chunk;
+  };
+
+  const finishChunkStreamer = () => {
+    // Flush remaining buffer smoothly
+    const flushInterval = setInterval(() => {
+      if (streamQueueRef.current.length > 0) {
+        const slice = streamQueueRef.current.slice(0, 16);
+        streamQueueRef.current = streamQueueRef.current.slice(16);
+        setGeneratedOutput((prev) => prev + slice);
+      } else {
+        clearInterval(flushInterval);
+        if (streamTimerRef.current) clearInterval(streamTimerRef.current);
+      }
+    }, 10);
+  };
+
+  // Sample notes for 1-click test
   const handleLoadSample = () => {
     setTitle('Database Management: ACID Properties & Normalization');
     setUploadedText(`1. ACID Properties in DBMS:
@@ -58,31 +111,65 @@ Process of organizing data to reduce data redundancy and eliminate anomalies (In
     setErrorMsg('');
   };
 
-  // Handle .txt or .md upload
-  const handleFileUpload = (e) => {
+  // Handle PDF, TXT, or MD upload
+  const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.name.endsWith('.txt') && !file.name.endsWith('.md')) {
-      setErrorMsg('Please upload a plain text (.txt) or markdown (.md) file.');
+    // Reset input to allow re-uploading same file name if needed
+    e.target.value = '';
+
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (ext !== 'pdf' && ext !== 'txt' && ext !== 'md') {
+      setErrorMsg('Please upload a PDF document (.pdf), plain text (.txt), or markdown (.md) file.');
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result;
-      if (typeof content === 'string') {
-        setUploadedText(content);
+    setIsParsingFile(true);
+    setParseStatus(`Uploading and parsing ${file.name}...`);
+    setErrorMsg('');
+
+    try {
+      if (ext === 'pdf') {
+        setParseStatus('Extracting text from PDF pages...');
+        const result = await parseDocumentFile(file);
+
+        if (!result.text || result.text.trim().length === 0) {
+          throw new Error('No readable text found in this PDF. If it is a scanned image, please paste text directly.');
+        }
+
+        setUploadedText(result.text);
         if (!title) {
           const autoTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
           setTitle(autoTitle.charAt(0).toUpperCase() + autoTitle.slice(1));
         }
+        setParseStatus(`Extracted ${result.pages || 1} pages from ${file.name}!`);
+        setTimeout(() => setParseStatus(''), 4000);
+      } else {
+        // Plain text or Markdown file
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const content = event.target?.result;
+          if (typeof content === 'string') {
+            setUploadedText(content);
+            if (!title) {
+              const autoTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+              setTitle(autoTitle.charAt(0).toUpperCase() + autoTitle.slice(1));
+            }
+            setParseStatus(`Loaded ${file.name} successfully!`);
+            setTimeout(() => setParseStatus(''), 3000);
+          }
+        };
+        reader.readAsText(file);
       }
-    };
-    reader.readAsText(file);
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to read PDF document.');
+    } finally {
+      setIsParsingFile(false);
+    }
   };
 
-  // Main flow: 1. Pay ₹9 via Razorpay -> 2. Stream AI Generation
+  // 1. Pay ₹9 via Razorpay -> 2. Stream chunk-by-chunk in real time
   const handlePayAndGenerate = async () => {
     setErrorMsg('');
 
@@ -92,7 +179,7 @@ Process of organizing data to reduce data redundancy and eliminate anomalies (In
     }
 
     if (!uploadedText.trim() || uploadedText.trim().length < 25) {
-      setErrorMsg('Please paste your study notes or lecture slides content (at least 2-3 lines).');
+      setErrorMsg('Please paste study notes or upload a PDF document with at least 2-3 lines of text.');
       return;
     }
 
@@ -118,27 +205,31 @@ Process of organizing data to reduce data redundancy and eliminate anomalies (In
 
             setIsProcessingPayment(false);
             setIsStreaming(true);
-            setGeneratedOutput('');
 
-            // Scroll to output
+            // Start chunk-by-chunk typewriter streaming engine
+            startChunkStreamer();
+
+            // Smooth scroll to output
             setTimeout(() => {
               outputRef.current?.scrollIntoView({ behavior: 'smooth' });
             }, 300);
 
-            // 4. Stream Gemini 2.5 Flash study guide
+            // 4. Stream AI study guide chunk-by-chunk
             await streamNoteGeneration({
               title: title.trim(),
               uploadedText: uploadedText.trim(),
               orderId: verifyResult.orderId,
               generationToken: verifyResult.generationToken,
               onChunk: (chunk) => {
-                setGeneratedOutput((prev) => prev + chunk);
+                pushChunk(chunk);
               },
               onError: (streamErr) => {
                 setErrorMsg(streamErr.message || 'Error occurred during notes generation.');
                 setIsStreaming(false);
+                finishChunkStreamer();
               },
               onDone: () => {
+                finishChunkStreamer();
                 setIsStreaming(false);
               },
             });
@@ -184,10 +275,12 @@ Process of organizing data to reduce data redundancy and eliminate anomalies (In
   };
 
   const handleReset = () => {
+    if (streamTimerRef.current) clearInterval(streamTimerRef.current);
     setTitle('');
     setUploadedText('');
     setGeneratedOutput('');
     setErrorMsg('');
+    setParseStatus('');
   };
 
   return (
@@ -199,8 +292,8 @@ Process of organizing data to reduce data redundancy and eliminate anomalies (In
             1
           </div>
           <div>
-            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">Paste Study Notes</h4>
-            <p className="text-[11px] text-slate-500">Lecture slides, book chapters, text</p>
+            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">Upload PDF or Notes</h4>
+            <p className="text-[11px] text-slate-500">Upload PDF slides, book chapters, text</p>
           </div>
         </div>
 
@@ -225,6 +318,14 @@ Process of organizing data to reduce data redundancy and eliminate anomalies (In
         </div>
       </div>
 
+      {/* Parsing Status Notification */}
+      {parseStatus && (
+        <div className="mb-4 p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-600/40 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2">
+          {isParsingFile ? <Loader2 className="w-4 h-4 animate-spin text-emerald-600" /> : <Check className="w-4 h-4 text-emerald-600" />}
+          <span>{parseStatus}</span>
+        </div>
+      )}
+
       {/* Error Alert */}
       {errorMsg && (
         <div className="mb-6 p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900/60 text-rose-700 dark:text-rose-300 text-xs sm:text-sm flex items-center justify-between shadow-sm">
@@ -245,10 +346,10 @@ Process of organizing data to reduce data redundancy and eliminate anomalies (In
           <div>
             <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <FileText className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-              <span>Study Notes &amp; Syllabus Input</span>
+              <span>Study Notes &amp; PDF Input</span>
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              No account creation or password needed. Generate on-demand.
+              Upload PDF documents or paste text. No account creation needed.
             </p>
           </div>
 
@@ -256,7 +357,7 @@ Process of organizing data to reduce data redundancy and eliminate anomalies (In
             <button
               type="button"
               onClick={handleLoadSample}
-              disabled={isProcessingPayment || isStreaming}
+              disabled={isProcessingPayment || isStreaming || isParsingFile}
               className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 hover:bg-emerald-100 transition-colors"
             >
               Try Sample Notes
@@ -265,7 +366,7 @@ Process of organizing data to reduce data redundancy and eliminate anomalies (In
               <button
                 type="button"
                 onClick={handleReset}
-                disabled={isProcessingPayment || isStreaming}
+                disabled={isProcessingPayment || isStreaming || isParsingFile}
                 className="p-1.5 rounded-xl text-slate-400 hover:text-rose-500 transition-colors"
                 title="Clear all"
               >
@@ -287,7 +388,7 @@ Process of organizing data to reduce data redundancy and eliminate anomalies (In
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Operating Systems: CPU Scheduling & Deadlocks"
-              disabled={isProcessingPayment || isStreaming}
+              disabled={isProcessingPayment || isStreaming || isParsingFile}
               className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 text-sm focus:outline-none focus:border-emerald-500 transition-colors"
             />
           </div>
@@ -296,7 +397,7 @@ Process of organizing data to reduce data redundancy and eliminate anomalies (In
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                Notes, Textbook Extracts, or Lecture Content
+                Notes, PDF Content, or Lecture Text
               </label>
               <span className="text-[11px] text-slate-400 font-mono">
                 {uploadedText.length} characters
@@ -306,8 +407,8 @@ Process of organizing data to reduce data redundancy and eliminate anomalies (In
               rows={9}
               value={uploadedText}
               onChange={(e) => setUploadedText(e.target.value)}
-              placeholder="Paste raw class notes, lecture slides text, book snippets, or syllabus bullet points here..."
-              disabled={isProcessingPayment || isStreaming}
+              placeholder="Paste raw class notes, lecture slides text, book snippets, or upload a PDF above..."
+              disabled={isProcessingPayment || isStreaming || isParsingFile}
               className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-600 text-xs sm:text-sm font-mono leading-relaxed focus:outline-none focus:border-emerald-500 transition-colors resize-y"
             />
           </div>
@@ -323,7 +424,7 @@ Process of organizing data to reduce data redundancy and eliminate anomalies (In
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
                 placeholder="e.g. Rahul Sharma"
-                disabled={isProcessingPayment || isStreaming}
+                disabled={isProcessingPayment || isStreaming || isParsingFile}
                 className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 text-xs focus:outline-none focus:border-emerald-500"
               />
             </div>
@@ -337,7 +438,7 @@ Process of organizing data to reduce data redundancy and eliminate anomalies (In
                 value={customerEmail}
                 onChange={(e) => setCustomerEmail(e.target.value)}
                 placeholder="student@gmail.com"
-                disabled={isProcessingPayment || isStreaming}
+                disabled={isProcessingPayment || isStreaming || isParsingFile}
                 className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 text-xs focus:outline-none focus:border-emerald-500"
               />
             </div>
@@ -350,17 +451,26 @@ Process of organizing data to reduce data redundancy and eliminate anomalies (In
                 type="file"
                 ref={fileInputRef}
                 onChange={handleFileUpload}
-                accept=".txt,.md"
+                accept=".pdf,.txt,.md"
                 className="hidden"
               />
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={isProcessingPayment || isStreaming}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 text-xs font-semibold flex items-center justify-center gap-2 transition-colors border border-slate-200 dark:border-slate-700"
+                disabled={isProcessingPayment || isStreaming || isParsingFile}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 text-xs font-semibold flex items-center justify-center gap-2 transition-colors border border-slate-200 dark:border-slate-700 shadow-sm"
               >
-                <Upload className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span>Upload .txt / .md</span>
+                {isParsingFile ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+                    <span>Extracting PDF...</span>
+                  </>
+                ) : (
+                  <>
+                    <FileUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span>Upload PDF / Notes (.pdf, .txt, .md)</span>
+                  </>
+                )}
               </button>
             </div>
 
@@ -368,7 +478,7 @@ Process of organizing data to reduce data redundancy and eliminate anomalies (In
             <button
               type="button"
               onClick={handlePayAndGenerate}
-              disabled={isProcessingPayment || isStreaming}
+              disabled={isProcessingPayment || isStreaming || isParsingFile}
               className="w-full sm:w-auto flex-1 max-w-md py-3.5 px-6 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-600/25 hover:shadow-emerald-600/35 transition-all disabled:opacity-50"
             >
               {isProcessingPayment ? (
@@ -379,7 +489,7 @@ Process of organizing data to reduce data redundancy and eliminate anomalies (In
               ) : isStreaming ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>AI Generating Study Guide...</span>
+                  <span>Generating Study Guide...</span>
                 </>
               ) : (
                 <>
@@ -398,14 +508,21 @@ Process of organizing data to reduce data redundancy and eliminate anomalies (In
         </div>
       </div>
 
-      {/* Generated Output Card (Appears as soon as streaming starts) */}
+      {/* Generated Output Card (Streams chunk-by-chunk in real time) */}
       {(generatedOutput || isStreaming) && (
         <div ref={outputRef} className="mt-8 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl p-6 sm:p-8 transition-colors">
           {/* Header Action Bar */}
           <div className="flex flex-wrap items-center justify-between gap-4 pb-6 border-b border-slate-200 dark:border-slate-800 no-print">
             <div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                {isStreaming ? '⚡ Real-time Generation in Progress' : '✅ Study Guide Ready'}
+              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                {isStreaming ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping inline-block" />
+                    <span>Streaming Live Response...</span>
+                  </>
+                ) : (
+                  <span>✅ Study Guide Ready</span>
+                )}
               </span>
               <h3 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white mt-0.5">
                 {title || 'Exam Study Guide'}
@@ -451,16 +568,19 @@ Process of organizing data to reduce data redundancy and eliminate anomalies (In
             </p>
           </div>
 
-          {/* Formatted Markdown Content */}
-          <div className="markdown-body mt-6">
+          {/* Formatted Markdown Content with Chunk-by-Chunk typing animation */}
+          <div className="markdown-body mt-6 relative">
             <ReactMarkdown>{generatedOutput}</ReactMarkdown>
+            {isStreaming && (
+              <span className="inline-block w-2 h-4 bg-emerald-500 animate-pulse ml-0.5 align-middle" />
+            )}
           </div>
 
           {/* Finish CTA */}
           {!isStreaming && (
             <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 no-print">
               <div className="text-xs text-slate-500 dark:text-slate-400">
-                Tip: Click <strong>&quot;Download as PDF&quot;</strong> and select &quot;Save as PDF&quot; in your browser print options.
+                Tip: Click <strong>&quot;Download as PDF&quot;</strong> and select &quot;Save as PDF&quot; in your print dialog.
               </div>
               <button
                 onClick={() => {

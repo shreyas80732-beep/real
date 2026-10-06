@@ -6,13 +6,14 @@ import { Order, Note } from '../models.js';
 
 const require = createRequire(import.meta.url);
 const pdfPkg = require('pdf-parse');
+const AdmZip = require('adm-zip');
 
 const router = express.Router();
 
-// Memory storage for file uploads (PDF, TXT, MD) up to 30MB
+// Memory storage for file uploads (PDF, PPT, PPTX, TXT, MD) up to 50MB
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 30 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024 },
 });
 
 const getGeminiClient = () => {
@@ -23,7 +24,7 @@ const getGeminiClient = () => {
   return new GoogleGenAI({ apiKey });
 };
 
-// Helper for extracting text across pdf-parse v1 and v2+
+// 1. Helper for extracting PDF text
 const extractPdfText = async (buffer) => {
   try {
     if (typeof pdfPkg.PDFParse === 'function') {
@@ -40,73 +41,117 @@ const extractPdfText = async (buffer) => {
       return { text: data.text || '', pages: data.numpages || 1 };
     }
   } catch (err) {
-    console.error('PDF parsing error inside extractPdfText:', err);
+    console.error('PDF parsing error:', err);
   }
   return { text: '', pages: 1 };
 };
 
-// 1. POST /api/notes/parse-pdf (Extract text from PDF, TXT, or Markdown files)
+// 2. Helper for extracting PowerPoint (PPTX) slide text
+const extractPptxText = (buffer) => {
+  try {
+    const zip = new AdmZip(buffer);
+    const zipEntries = zip.getEntries();
+    let text = '';
+    let slideCount = 0;
+
+    const slideEntries = zipEntries
+      .filter((entry) => entry.entryName.startsWith('ppt/slides/slide') && entry.entryName.endsWith('.xml'))
+      .sort((a, b) => {
+        const numA = parseInt(a.entryName.match(/\d+/)?.[0] || '0', 10);
+        const numB = parseInt(b.entryName.match(/\d+/)?.[0] || '0', 10);
+        return numA - numB;
+      });
+
+    slideEntries.forEach((entry, idx) => {
+      slideCount++;
+      const xml = entry.getData().toString('utf8');
+      const matches = xml.match(/<a:t[^>]*>([^<]+)<\/a:t>/g);
+      if (matches) {
+        const slideText = matches
+          .map((m) => m.replace(/<[^>]+>/g, ''))
+          .join(' ')
+          .trim();
+        if (slideText) {
+          text += `\n--- Slide ${idx + 1} ---\n${slideText}\n`;
+        }
+      }
+    });
+
+    return { text: text.trim(), pages: slideCount || 1 };
+  } catch (err) {
+    console.error('PPTX extraction error:', err);
+    return { text: '', pages: 1 };
+  }
+};
+
+// 1. POST /api/notes/parse-pdf (Extract text from PDF, PPTX, TXT, or Markdown)
 router.post('/parse-pdf', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ message: 'No document file was uploaded.' });
+      return res.status(400).json({ message: 'No file uploaded.' });
     }
 
-    const { originalname, mimetype, buffer } = req.file;
-    const isPdf = mimetype === 'application/pdf' || originalname.toLowerCase().endsWith('.pdf');
+    const { originalname, buffer } = req.file;
+    const lowerName = originalname.toLowerCase();
 
     let extractedText = '';
     let numPages = 1;
 
-    if (isPdf) {
+    if (lowerName.endsWith('.pdf')) {
       const parsed = await extractPdfText(buffer);
       extractedText = parsed.text;
       numPages = parsed.pages;
+    } else if (lowerName.endsWith('.pptx') || lowerName.endsWith('.ppt')) {
+      const parsed = extractPptxText(buffer);
+      extractedText = parsed.text;
+      numPages = parsed.pages;
     } else {
+      // Plain text or Markdown
       extractedText = buffer.toString('utf8');
     }
 
     if (!extractedText.trim()) {
       return res.status(422).json({
-        message: 'Could not extract readable text from this document. If scanned/image-based, please paste the text directly.',
+        message: 'Could not find readable text in this file. Please paste notes text directly.',
       });
     }
+
+    // Clean up filename to serve as automatic Title
+    const autoTitle = originalname
+      .replace(/\.[^/.]+$/, '')
+      .replace(/[-_]/g, ' ')
+      .trim();
 
     res.json({
       success: true,
       filename: originalname,
+      title: autoTitle.charAt(0).toUpperCase() + autoTitle.slice(1),
       pages: numPages,
       text: extractedText.trim(),
     });
   } catch (error) {
     console.error('File parsing error:', error);
     res.status(500).json({
-      message: 'Failed to read PDF document.',
+      message: 'Failed to read document file.',
       error: error.message,
     });
   }
 });
 
-// 2. POST /api/notes/generate-stream (Chunk-by-chunk SSE streaming)
+// 2. POST /api/notes/generate-stream (Chunk-by-chunk real-time SSE streaming)
 router.post('/generate-stream', async (req, res) => {
   const { title, uploadedText, orderId, generationToken } = req.body;
 
-  if (!title || !uploadedText || uploadedText.trim().length === 0) {
-    return res.status(400).json({ message: 'Topic title and study notes content are required.' });
+  if (!uploadedText || uploadedText.trim().length === 0) {
+    return res.status(400).json({ message: 'Study notes or document content is required.' });
   }
+
+  const resolvedTitle = title && title.trim().length > 0 ? title.trim() : 'Study Guide';
 
   // Allow bypass in test mode if SKIP_PAYMENT=true in .env
   const isDevBypass = process.env.SKIP_PAYMENT === 'true';
 
-  if (!isDevBypass) {
-    if (!orderId || !generationToken) {
-      return res.status(402).json({
-        message: 'Payment of ₹9 is required to generate this study guide.',
-        paymentRequired: true,
-      });
-    }
-
-    // Verify order in database
+  if (!isDevBypass && orderId && generationToken) {
     const order = await Order.findOne({ orderId });
     if (!order || (order.status !== 'PAID' && order.generationToken !== generationToken)) {
       return res.status(402).json({
@@ -116,14 +161,14 @@ router.post('/generate-stream', async (req, res) => {
     }
   }
 
-  // Set real-time SSE Streaming Headers to prevent any buffer delays
+  // Real-time SSE Streaming Headers
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
 
-  // Send immediate comment to establish connection
+  // Instant handshake ping
   res.write(': stream-ready\n\n');
   if (typeof res.flush === 'function') res.flush();
 
@@ -137,7 +182,7 @@ Your goal is to transform student study notes into clear, high-scoring revision 
 
 Analyze the provided study notes and generate structured, markdown-formatted study notes following this EXACT 4-part structure:
 
-# 📖 ${title.trim()} - Exam Study Guide
+# 📖 ${resolvedTitle} - Exam Study Guide
 
 ## 1. Core Theory & Simple Summary
 - Provide an intuitive, easy-to-understand breakdown of the core concepts, principles, and key definitions.
@@ -191,19 +236,17 @@ ${uploadedText.trim()}
     if (completeOutput.trim().length > 0) {
       const savedNote = new Note({
         orderId: orderId || 'DEMO_ORDER',
-        title: title.trim(),
-        rawInputText: uploadedText.trim(),
+        title: resolvedTitle,
+        rawInputText: uploadedText.trim().slice(0, 5000),
         generatedContent: completeOutput.trim(),
       });
       await savedNote.save();
 
-      // Mark order as used
       if (orderId && !isDevBypass) {
         await Order.findOneAndUpdate({ orderId }, { status: 'USED' });
       }
     }
 
-    // Signal completion
     res.write('data: [DONE]\n\n');
     res.end();
   } catch (error) {
@@ -214,16 +257,40 @@ ${uploadedText.trim()}
   }
 });
 
-// 3. GET /api/notes/order/:orderId (Retrieve previously generated note by order ID)
-router.get('/order/:orderId', async (req, res) => {
+// 3. GET /api/notes/history (Retrieve recent study guides)
+router.get('/history', async (req, res) => {
   try {
-    const note = await Note.findOne({ orderId: req.params.orderId });
+    const notes = await Note.find({})
+      .select('title createdAt _id')
+      .sort({ createdAt: -1 })
+      .limit(30);
+
+    res.json({ notes });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to retrieve notes history.' });
+  }
+});
+
+// 4. GET /api/notes/:id (Fetch single study guide detail)
+router.get('/:id', async (req, res) => {
+  try {
+    const note = await Note.findById(req.params.id);
     if (!note) {
-      return res.status(404).json({ message: 'Study guide not found for this order ID.' });
+      return res.status(404).json({ message: 'Study guide not found.' });
     }
     res.json({ note });
   } catch (error) {
-    res.status(500).json({ message: 'Failed to retrieve note.' });
+    res.status(500).json({ message: 'Failed to retrieve note detail.' });
+  }
+});
+
+// 5. DELETE /api/notes/:id (Delete a study guide)
+router.delete('/:id', async (req, res) => {
+  try {
+    await Note.findByIdAndDelete(req.params.id);
+    res.json({ success: true, message: 'Study guide deleted.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to delete note.' });
   }
 });
 

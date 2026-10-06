@@ -1,7 +1,7 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 /**
- * 1. Extract text from uploaded PDF, TXT, or Markdown documents
+ * 1. Extract text from uploaded PDF, PPT, PPTX, TXT, or Markdown documents
  */
 export const parseDocumentFile = async (file) => {
   const formData = new FormData();
@@ -129,4 +129,29 @@ export const streamNoteGeneration = async ({
   } catch (error) {
     if (onError) onError(error);
   }
+};
+
+/**
+ * 5. Fetch Study Guide History (ChatGPT style)
+ */
+export const getNotesHistory = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/notes/history`);
+    if (!response.ok) return { notes: [] };
+    return await response.json();
+  } catch {
+    return { notes: [] };
+  }
+};
+
+export const getNoteDetail = async (id) => {
+  const response = await fetch(`${API_BASE_URL}/api/notes/${id}`);
+  if (!response.ok) throw new Error('Study guide not found.');
+  return await response.json();
+};
+
+export const deleteNoteApi = async (id) => {
+  const response = await fetch(`${API_BASE_URL}/api/notes/${id}`, { method: 'DELETE' });
+  if (!response.ok) throw new Error('Failed to delete study guide.');
+  return await response.json();
 };

@@ -1,18 +1,32 @@
 import React, { useState, useEffect } from 'react';
-import Navbar from './components/Navbar';
+import Sidebar from './components/Sidebar';
 import GeneratorWorkspace from './components/GeneratorWorkspace';
 import ComplianceModal from './components/ComplianceModals';
-import { Sparkles, Zap, CheckCircle2, ShieldCheck, Heart } from 'lucide-react';
+import { Menu, Zap, BookOpen } from 'lucide-react';
+import { getNotesHistory, deleteNoteApi } from './services/api';
+
+const LOCAL_STORAGE_HISTORY_KEY = 'notecraft_study_history';
 
 export default function App() {
-  // Theme state: 'light' or 'dark'
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem('notecraft_theme') || 'dark';
   });
 
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeNote, setActiveNote] = useState(null);
   const [complianceType, setComplianceType] = useState(null);
 
-  // Apply theme to html root
+  // History state: combined local + backend notes
+  const [history, setHistory] = useState(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_HISTORY_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Apply Light / Dark mode
   useEffect(() => {
     const root = document.documentElement;
     if (theme === 'dark') {
@@ -23,101 +37,133 @@ export default function App() {
     localStorage.setItem('notecraft_theme', theme);
   }, [theme]);
 
+  // Load backend history on mount
+  useEffect(() => {
+    const loadRemoteHistory = async () => {
+      try {
+        const data = await getNotesHistory();
+        if (data?.notes && data.notes.length > 0) {
+          setHistory((prev) => {
+            const combined = [...prev];
+            data.notes.forEach((remoteNote) => {
+              if (!combined.some((n) => n._id === remoteNote._id || n.id === remoteNote._id)) {
+                combined.push(remoteNote);
+              }
+            });
+            localStorage.setItem(LOCAL_STORAGE_HISTORY_KEY, JSON.stringify(combined));
+            return combined;
+          });
+        }
+      } catch (err) {
+        console.warn('Could not fetch cloud history:', err.message);
+      }
+    };
+    loadRemoteHistory();
+  }, []);
+
   const toggleTheme = () => {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
 
+  // Add newly generated note to history
+  const handleNoteCreated = (newNote) => {
+    setHistory((prev) => {
+      const updated = [newNote, ...prev.filter((n) => n.id !== newNote.id && n._id !== newNote.id)];
+      localStorage.setItem(LOCAL_STORAGE_HISTORY_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  // Select note from sidebar
+  const handleSelectNote = (note) => {
+    setActiveNote(note);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Start fresh note
+  const handleStartNew = () => {
+    setActiveNote(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Delete note from history
+  const handleDeleteNote = async (id) => {
+    setHistory((prev) => {
+      const updated = prev.filter((n) => n._id !== id && n.id !== id);
+      localStorage.setItem(LOCAL_STORAGE_HISTORY_KEY, JSON.stringify(updated));
+      return updated;
+    });
+
+    if (activeNote?._id === id || activeNote?.id === id) {
+      setActiveNote(null);
+    }
+
+    try {
+      if (!id.startsWith('local_')) {
+        await deleteNoteApi(id);
+      }
+    } catch (err) {
+      console.warn('Delete error:', err.message);
+    }
+  };
+
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
-      {/* Navbar with Theme Toggle */}
-      <Navbar theme={theme} onToggleTheme={toggleTheme} />
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex transition-colors duration-200">
+      {/* ChatGPT-style History Sidebar */}
+      <Sidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        history={history}
+        activeNoteId={activeNote?._id || activeNote?.id}
+        onSelectNote={handleSelectNote}
+        onNewNote={handleStartNew}
+        onDeleteNote={handleDeleteNote}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onOpenCompliance={(type) => setComplianceType(type)}
+      />
 
-      {/* Main Content */}
-      <main className="flex-1">
-        {/* Friendly Hero Banner */}
-        <section className="pt-10 pb-6 text-center px-4 relative overflow-hidden">
-          <div className="max-w-3xl mx-auto">
-            {/* Pill */}
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs font-bold mb-4 shadow-sm">
-              <Zap className="w-3.5 h-3.5 fill-current text-emerald-600 dark:text-emerald-400" />
-              <span>Zero Passwords • Instant UPI Access • ₹9 / PDF</span>
-            </div>
+      {/* Main App Content Area (Pushed right on desktop by 72 / 18rem) */}
+      <div className="flex-1 flex flex-col min-w-0 lg:pl-72 transition-all">
+        {/* Top Navbar */}
+        <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 h-14 px-4 sm:px-6 flex items-center justify-between no-print">
+          <div className="flex items-center gap-3">
+            {/* Mobile Hamburger Menu */}
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 lg:hidden hover:bg-slate-200"
+              title="Open History Menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
 
-            <h1 className="text-3xl sm:text-5xl font-extrabold text-slate-900 dark:text-white tracking-tight leading-tight">
-              Turn Messy Notes into <br />
-              <span className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 dark:from-emerald-400 dark:via-teal-300 dark:to-cyan-400 bg-clip-text text-transparent">
-                High-Scoring Exam Guides
+            <div className="flex items-center gap-2">
+              <span className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">
+                NoteCraft AI
               </span>
-            </h1>
-
-            <p className="mt-3 text-sm sm:text-base text-slate-600 dark:text-slate-400 max-w-xl mx-auto leading-relaxed">
-              Upload notes, slides, or chapters. Get clear <strong className="text-slate-800 dark:text-slate-200">Theory Summaries + 2, 3 &amp; 6-Mark Q&amp;As</strong> formatted for high marks.
-            </p>
-
-            {/* Feature Highlights */}
-            <div className="mt-5 flex flex-wrap items-center justify-center gap-y-2 gap-x-5 text-xs text-slate-500 dark:text-slate-400">
-              <div className="flex items-center gap-1">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <span>₹9 per PDF (No Subscriptions)</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <span>Instant Q&amp;A Exam Engine</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <span>1-Click PDF Download</span>
-              </div>
+              <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-500/30">
+                Exam Guide
+              </span>
             </div>
           </div>
-        </section>
 
-        {/* Generator Studio */}
-        <GeneratorWorkspace />
-      </main>
-
-      {/* Footer */}
-      <footer className="border-t border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-950 py-8 mt-12 text-slate-500 dark:text-slate-400 text-xs no-print transition-colors">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <span className="font-extrabold text-slate-800 dark:text-slate-200">NoteCraft AI</span>
-            <span>&copy; {new Date().getFullYear()} • Pay-Per-PDF Exam Assistant</span>
+          <div className="flex items-center gap-2.5">
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs font-bold">
+              <Zap className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 fill-current" />
+              <span>₹9 / PDF</span>
+            </div>
           </div>
+        </header>
 
-          {/* Compliance Links for Razorpay */}
-          <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6">
-            <button
-              onClick={() => setComplianceType('terms')}
-              className="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
-            >
-              Terms of Service
-            </button>
-            <button
-              onClick={() => setComplianceType('privacy')}
-              className="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
-            >
-              Privacy Policy
-            </button>
-            <button
-              onClick={() => setComplianceType('refund')}
-              className="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
-            >
-              Refund Policy
-            </button>
-            <button
-              onClick={() => setComplianceType('contact')}
-              className="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
-            >
-              Contact Us
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1 text-[11px] text-slate-400">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Secure 256-bit UPI Payments</span>
-          </div>
-        </div>
-      </footer>
+        {/* Workspace Canvas */}
+        <main className="flex-1 py-4 sm:py-6">
+          <GeneratorWorkspace
+            activeNote={activeNote}
+            onNoteCreated={handleNoteCreated}
+            onStartNew={handleStartNew}
+          />
+        </main>
+      </div>
 
       {/* Compliance Policies Modal */}
       <ComplianceModal

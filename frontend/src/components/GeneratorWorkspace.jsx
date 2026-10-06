@@ -330,7 +330,7 @@ Requirements for valid solution:
                 <span>Upload PDF, PPT, or Notes</span>
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Instant Theory Breakdown + 2, 3 &amp; 6-Mark Q&amp;As (₹9 / Guide)
+                Detailed Theory Breakdown + 1, 2 &amp; 6-Mark Q&amp;As (₹9 / Guide)
               </p>
             </div>
 

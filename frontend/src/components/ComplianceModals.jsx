@@ -15,7 +15,7 @@ export default function ComplianceModal({ type, isOpen, onClose }) {
           </p>
           <h4 className="text-slate-900 dark:text-white font-semibold">1. Service Description</h4>
           <p>
-            NoteCraft AI provides AI-assisted note restructuring, revision summaries, and structured 2, 3, and 6-mark Q&amp;A generation powered by advanced AI LLM models. The service is provided on an educational basis.
+            NoteCraft AI provides AI-assisted note restructuring, revision summaries, and structured 1, 2, and 6-mark Q&amp;A generation powered by advanced AI LLM models. The service is provided on an educational basis.
           </p>
           <h4 className="text-slate-900 dark:text-white font-semibold">2. Pay-Per-PDF Pricing (₹9)</h4>
           <p>

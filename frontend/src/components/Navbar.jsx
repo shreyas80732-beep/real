@@ -15,7 +15,7 @@ export default function Navbar({ theme, onToggleTheme }) {
               <span className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">NoteCraft</span>
               <span className="text-xs font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-500/30">AI</span>
             </div>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block">2, 3 &amp; 6-Mark Exam Q&amp;A Generator</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block">Easy Theory + 1, 2 &amp; 6-Mark Exam Q&amp;As</p>
           </div>
         </div>
 

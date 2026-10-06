@@ -24,7 +24,7 @@ export default function HeroPricingBanner({ user, onOpenSubscription, onScrollTo
 
         <p className="mt-4 text-slate-300 text-sm sm:text-base max-w-2xl mx-auto leading-relaxed">
           Upload messy lecture slides, handouts, or textbook snippets. Get instant summaries with structured
-          <strong className="text-white"> 2, 3, and 6-mark Q&amp;As</strong> crafted for top college &amp; school exam scores.
+          <strong className="text-white"> 1, 2, and 6-mark Q&amp;As</strong> crafted for top college &amp; school exam scores.
         </p>
 
         {/* Pricing Card Highlight */}
@@ -33,8 +33,8 @@ export default function HeroPricingBanner({ user, onOpenSubscription, onScrollTo
             <div className="text-left">
               <span className="text-xs uppercase font-bold tracking-wider text-emerald-400">Micro-Pass</span>
               <div className="flex items-baseline gap-1 mt-0.5">
-                <span className="text-3xl font-extrabold text-white">₹20</span>
-                <span className="text-xs text-slate-400">/ 15 days access</span>
+                <span className="text-3xl font-extrabold text-white">₹9</span>
+                <span className="text-xs text-slate-400">/ per Study Guide PDF</span>
               </div>
               <p className="text-[11px] text-slate-400">Pay via GooglePay, PhonePe, Paytm, or any UPI</p>
             </div>
@@ -53,7 +53,7 @@ export default function HeroPricingBanner({ user, onOpenSubscription, onScrollTo
                 className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-bold text-xs transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-1.5 group"
               >
                 <Sparkles className="w-4 h-4 transition-transform group-hover:scale-110" />
-                <span>Unlock for ₹20</span>
+                <span>Unlock for ₹9</span>
               </button>
             )}
           </div>
@@ -63,11 +63,11 @@ export default function HeroPricingBanner({ user, onOpenSubscription, onScrollTo
         <div className="mt-6 flex flex-wrap items-center justify-center gap-y-2 gap-x-6 text-xs text-slate-400">
           <div className="flex items-center gap-1.5">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            <span>Core Theory Summary</span>
+            <span>Easy Detailed Theory</span>
           </div>
           <div className="flex items-center gap-1.5">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            <span>2, 3 &amp; 6-Mark Exam Q&amp;As</span>
+            <span>1, 2 &amp; 6-Mark Exam Q&amp;As</span>
           </div>
           <div className="flex items-center gap-1.5">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />

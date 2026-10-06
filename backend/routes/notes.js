@@ -1,8 +1,11 @@
 import express from 'express';
 import multer from 'multer';
-import pdfParse from 'pdf-parse';
+import { createRequire } from 'module';
 import { GoogleGenAI } from '@google/genai';
 import { Order, Note } from '../models.js';
+
+const require = createRequire(import.meta.url);
+const pdfPkg = require('pdf-parse');
 
 const router = express.Router();
 
@@ -20,6 +23,28 @@ const getGeminiClient = () => {
   return new GoogleGenAI({ apiKey });
 };
 
+// Helper for extracting text across pdf-parse v1 and v2+
+const extractPdfText = async (buffer) => {
+  try {
+    if (typeof pdfPkg.PDFParse === 'function') {
+      const parser = new pdfPkg.PDFParse({ data: buffer });
+      if (typeof parser.load === 'function') await parser.load();
+      if (typeof parser.getText === 'function') {
+        const textResult = await parser.getText();
+        const text = typeof textResult === 'string' ? textResult : (textResult?.text || '');
+        return { text, pages: parser.doc?.numPages || 1 };
+      }
+    }
+    if (typeof pdfPkg === 'function') {
+      const data = await pdfPkg(buffer);
+      return { text: data.text || '', pages: data.numpages || 1 };
+    }
+  } catch (err) {
+    console.error('PDF parsing error inside extractPdfText:', err);
+  }
+  return { text: '', pages: 1 };
+};
+
 // 1. POST /api/notes/parse-pdf (Extract text from PDF, TXT, or Markdown files)
 router.post('/parse-pdf', upload.single('file'), async (req, res) => {
   try {
@@ -34,11 +59,10 @@ router.post('/parse-pdf', upload.single('file'), async (req, res) => {
     let numPages = 1;
 
     if (isPdf) {
-      const pdfData = await pdfParse(buffer);
-      extractedText = pdfData.text || '';
-      numPages = pdfData.numpages || 1;
+      const parsed = await extractPdfText(buffer);
+      extractedText = parsed.text;
+      numPages = parsed.pages;
     } else {
-      // Plain text or Markdown
       extractedText = buffer.toString('utf8');
     }
 

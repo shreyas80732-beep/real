@@ -215,12 +215,31 @@ Here is the student's study material:
 ${uploadedText.trim()}
 """`;
 
-    const modelName = process.env.GEMINI_MODEL || 'gemini-3.7-flash';
+    const candidateModels = [
+      process.env.GEMINI_MODEL,
+      'gemini-3.7-flash',
+      'gemini-3.8-flash',
+    ].filter(Boolean);
 
-    const responseStream = await ai.models.generateContentStream({
-      model: modelName,
-      contents: systemPrompt,
-    });
+    let responseStream = null;
+    let lastError = null;
+
+    for (const modelCandidate of [...new Set(candidateModels)]) {
+      try {
+        responseStream = await ai.models.generateContentStream({
+          model: modelCandidate,
+          contents: systemPrompt,
+        });
+        if (responseStream) break;
+      } catch (err) {
+        lastError = err;
+        console.warn(`Model ${modelCandidate} temporarily busy, trying next candidate...`);
+      }
+    }
+
+    if (!responseStream) {
+      throw lastError || new Error('AI engine is currently experiencing high demand. Please try again.');
+    }
 
     for await (const chunk of responseStream) {
       const text = chunk.text;
